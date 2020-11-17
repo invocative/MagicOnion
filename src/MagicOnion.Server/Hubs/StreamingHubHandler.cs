@@ -7,6 +7,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
 using System.Threading;
+using System.Diagnostics;
 
 namespace MagicOnion.Server.Hubs
 {
@@ -37,9 +38,12 @@ namespace MagicOnion.Server.Hubs
 
         private static MethodInfo GetInterfaceMethod(Type targetType, Type interfaceType, string targetMethodName)
         {
-            var mapping = targetType.GetInterfaceMap(interfaceType);
-            var methodIndex = Array.FindIndex(mapping.TargetMethods, mi => mi.Name == targetMethodName);
-            return mapping.InterfaceMethods[methodIndex];
+            var mapping = targetType.GetInterfaces().Select(targetType.GetInterfaceMap).ToArray();
+            var targetMethods = mapping.SelectMany(x => x.TargetMethods).ToArray();
+            var interfaceMethods = mapping.SelectMany(x => x.InterfaceMethods).ToArray();
+            Debug.Assert(targetMethods.Length == interfaceMethods.Length, $"Invalid mapping index; targetMethods.Length == interfaceMethods.Length");
+            var methodIndex = Array.FindIndex(targetMethods, mi => mi.Name == targetMethodName);
+            return interfaceMethods[methodIndex];
         }
 
         public StreamingHubHandler(Type classType, MethodInfo methodInfo, StreamingHubHandlerOptions handlerOptions, IServiceProvider serviceProvider)

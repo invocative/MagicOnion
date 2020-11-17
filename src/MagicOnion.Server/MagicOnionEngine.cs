@@ -100,60 +100,69 @@ namespace MagicOnion.Server
                         tempStreamingHubHandlers = new HashSet<StreamingHubHandler>();
                     }
 
-                    var inheritInterface = classType.GetInterfaces()
-                        .First(x => x.IsGenericType && x.GetGenericTypeDefinition() == (isStreamingHub ? typeof(IStreamingHub<,>) : typeof(IService<>)))
-                        .GenericTypeArguments[0];
-
-                    if (!inheritInterface.IsAssignableFrom(classType))
+                    var inheritInterfaces = classType.GetInterfaces()
+                        .Select(z => classType.GetInterfaceMap(z));
+                    foreach (var @interface in inheritInterfaces)
                     {
-                        throw new NotImplementedException($"Type '{classType.FullName}' has no implementation of interface '{inheritInterface.FullName}'.");
+                        if(!@interface.InterfaceType.IsAssignableFrom(classType))
+                            throw new NotImplementedException($"Type '{classType.FullName}' has no implementation of interface '{@interface.InterfaceType.FullName}'.");
                     }
 
-                    var interfaceMap = classType.GetInterfaceMap(inheritInterface);
+                    var interfaceMap = inheritInterfaces.Select(x => classType.GetInterfaceMap(x.InterfaceType)).ToArray();
 
-                    for (int i = 0; i < interfaceMap.TargetMethods.Length; ++i)
+                    foreach (var mapping in interfaceMap)
+                        CollectDataFromMap(mapping);
+
+
+                    void CollectDataFromMap(InterfaceMapping map)
                     {
-                        var methodInfo = interfaceMap.TargetMethods[i];
-                        var methodName = interfaceMap.InterfaceMethods[i].Name;
-
-                        if (methodInfo.IsSpecialName && (methodInfo.Name.StartsWith("set_") || methodInfo.Name.StartsWith("get_"))) continue;
-                        if (methodInfo.GetCustomAttribute<IgnoreAttribute>(false) != null) continue; // ignore
-
-                        // ignore default methods
-                        if (methodName == "Equals"
-                                || methodName == "GetHashCode"
-                                || methodName == "GetType"
-                                || methodName == "ToString"
-                                || methodName == "WithOptions"
-                                || methodName == "WithHeaders"
-                                || methodName == "WithDeadline"
-                                || methodName == "WithCancellationToken"
-                                || methodName == "WithHost"
-                                )
+                        for (int i = 0; i <  map.TargetMethods.Length; ++i)
                         {
-                            continue;
-                        }
+                            var methodInfo = map.TargetMethods[i];
+                            var methodName = map.InterfaceMethods[i].Name;
 
-                        // register for StreamingHub
-                        if (isStreamingHub && methodName != "Connect")
-                        {
-                            var streamingHandler = new StreamingHubHandler(classType, methodInfo, new StreamingHubHandlerOptions(options), serviceProvider);
-                            if (!tempStreamingHubHandlers!.Add(streamingHandler))
+                            if (methodInfo.IsSpecialName && (methodInfo.Name.StartsWith("set_") || methodInfo.Name.StartsWith("get_"))) continue;
+                            if (methodInfo.GetCustomAttribute<IgnoreAttribute>(false) != null) continue; // ignore
+
+                            // ignore default methods
+                            if (methodName == "Equals"
+                                    || methodName == "GetHashCode"
+                                    || methodName == "GetType"
+                                    || methodName == "ToString"
+                                    || methodName == "WithOptions"
+                                    || methodName == "WithHeaders"
+                                    || methodName == "WithDeadline"
+                                    || methodName == "WithCancellationToken"
+                                    || methodName == "WithHost"
+                                    )
                             {
-                                throw new InvalidOperationException($"Method does not allow overload, {className}.{methodName}");
+                                continue;
                             }
-                            continue;
-                        }
-                        else
-                        {
-                            // create handler
-                            var handler = new MethodHandler(classType, methodInfo, methodName, new MethodHandlerOptions(options), serviceProvider);
-                            if (!handlers.Add(handler))
+
+                            // register for StreamingHub
+                            if (isStreamingHub && methodName != "Connect")
                             {
-                                throw new InvalidOperationException($"Method does not allow overload, {className}.{methodName}");
+                                var streamingHandler = new StreamingHubHandler(classType, methodInfo, new StreamingHubHandlerOptions(options), serviceProvider);
+                                if (!tempStreamingHubHandlers!.Add(streamingHandler))
+                                {
+                                    throw new InvalidOperationException($"Method does not allow overload, {className}.{methodName}");
+                                }
+                                continue;
+                            }
+                            else
+                            {
+                                // create handler
+                                var handler = new MethodHandler(classType, methodInfo, methodName, new MethodHandlerOptions(options), serviceProvider);
+                                if (!handlers.Add(handler))
+                                {
+                                    throw new InvalidOperationException($"Method does not allow overload, {className}.{methodName}");
+                                }
                             }
                         }
                     }
+
+
+                        
 
                     if (isStreamingHub)
                     {
